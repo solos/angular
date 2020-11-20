@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 import {AbsoluteFsPath, isLocalRelativePath, relative} from '../../../src/ngtsc/file_system';
-import {DependencyTracker} from '../../../src/ngtsc/incremental/api';
+import {ComponentResolutionRegistry, DependencyTracker} from '../../../src/ngtsc/incremental/api';
 
 export function isWithinPackage(packagePath: AbsoluteFsPath, filePath: AbsoluteFsPath): boolean {
   const relativePath = relative(packagePath, filePath);
@@ -16,9 +16,11 @@ export function isWithinPackage(packagePath: AbsoluteFsPath, filePath: AbsoluteF
 class NoopDependencyTracker implements DependencyTracker {
   addDependency(): void {}
   addResourceDependency(): void {}
-  addTransitiveDependency(): void {}
-  addTransitiveResources(): void {}
   recordDependencyAnalysisFailure(): void {}
 }
 
 export const NOOP_DEPENDENCY_TRACKER: DependencyTracker = new NoopDependencyTracker();
+
+export const NOOP_COMPONENT_RESOLUTION_REGISTRY: ComponentResolutionRegistry = {
+  register() {}
+};

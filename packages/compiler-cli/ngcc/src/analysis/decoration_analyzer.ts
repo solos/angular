@@ -28,7 +28,7 @@ import {EntryPointBundle} from '../packages/entry_point_bundle';
 import {DefaultMigrationHost} from './migration_host';
 import {NgccTraitCompiler} from './ngcc_trait_compiler';
 import {CompiledClass, CompiledFile, DecorationAnalyses} from './types';
-import {isWithinPackage, NOOP_DEPENDENCY_TRACKER} from './util';
+import {isWithinPackage, NOOP_COMPONENT_RESOLUTION_REGISTRY, NOOP_DEPENDENCY_TRACKER} from './util';
 
 
 
@@ -102,7 +102,8 @@ export class DecorationAnalyzer {
         /* usePoisonedData */ false,
         /* i18nNormalizeLineEndingsInICUs */ false, this.moduleResolver, this.cycleAnalyzer,
         this.refEmitter, NOOP_DEFAULT_IMPORT_RECORDER, NOOP_DEPENDENCY_TRACKER,
-        this.injectableRegistry, !!this.compilerOptions.annotateForClosureCompiler),
+        this.injectableRegistry, NOOP_COMPONENT_RESOLUTION_REGISTRY,
+        !!this.compilerOptions.annotateForClosureCompiler),
     // See the note in ngtsc about why this cast is needed.
     // clang-format off
     new DirectiveDecoratorHandler(

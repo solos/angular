@@ -12,6 +12,7 @@ ts_library(
         "//packages/compiler-cli/src/ngtsc/file_system",
         "//packages/compiler-cli/src/ngtsc/imports",
         "//packages/compiler-cli/src/ngtsc/metadata",
+        "//packages/compiler-cli/src/ngtsc/ngmodule_semantics",
         "//packages/compiler-cli/src/ngtsc/partial_evaluator",
         "//packages/compiler-cli/src/ngtsc/reflection",
         "//packages/compiler-cli/src/ngtsc/scope",
@@ -27,6 +28,7 @@ ts_library(
     srcs = ["api.ts"],
     deps = [
         "//packages/compiler-cli/src/ngtsc/file_system",
+        "//packages/compiler-cli/src/ngtsc/reflection",
         "@npm//typescript",
     ],
 )

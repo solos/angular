@@ -8,6 +8,7 @@
 
 import * as ts from 'typescript';
 import {AbsoluteFsPath} from '../file_system';
+import {ClassDeclaration, DeclarationNode} from '../reflection';
 
 /**
  * Interface of the incremental build engine.
@@ -50,26 +51,27 @@ export interface DependencyTracker<T extends {fileName: string} = ts.SourceFile>
   addResourceDependency(from: T, on: AbsoluteFsPath): void;
 
   /**
-   * Record that the file `from` depends on the file `on` as well as `on`'s direct dependencies.
-   *
-   * This operation is reified immediately, so if future dependencies are added to `on` they will
-   * not automatically be added to `from`.
-   */
-  addTransitiveDependency(from: T, on: T): void;
-
-  /**
-   * Record that the file `from` depends on the resource dependencies of `resourcesOf`.
-   *
-   * This operation is reified immediately, so if future resource dependencies are added to
-   * `resourcesOf` they will not automatically be added to `from`.
-   */
-  addTransitiveResources(from: T, resourcesOf: T): void;
-
-  /**
    * Record that the given file contains unresolvable dependencies.
    *
    * In practice, this means that the dependency graph cannot provide insight into the effects of
    * future changes on that file.
    */
   recordDependencyAnalysisFailure(file: T): void;
+}
+
+/**
+ * Captures the resolution data of components to be able determine if a component's emit is
+ * affected by the changes that were made in an incremental rebuild.
+ */
+export interface ComponentResolutionRegistry {
+  /**
+   * Registers a component's usages in the registry.
+   * @param component The component declaration to register.
+   * @param usedDirectives The declarations of the directives that are used by the component.
+   * @param usedPipes The declarations of the pipes that are used by the component.
+   * @param isRemotelyScoped Whether the component requires remote scoping.
+   */
+  register(
+      component: ClassDeclaration, usedDirectives: ClassDeclaration[],
+      usedPipes: ClassDeclaration[], isRemotelyScoped: boolean): void;
 }

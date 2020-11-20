@@ -16,9 +16,11 @@ import {checkForPrivateExports, ReferenceGraph} from '../../entry_point';
 import {LogicalFileSystem, resolve} from '../../file_system';
 import {AbsoluteModuleStrategy, AliasingHost, AliasStrategy, DefaultImportTracker, ImportRewriter, LocalIdentifierStrategy, LogicalProjectStrategy, ModuleResolver, NoopImportRewriter, PrivateExportAliasingHost, R3SymbolsImportRewriter, Reference, ReferenceEmitStrategy, ReferenceEmitter, RelativePathStrategy, UnifiedModulesAliasingHost, UnifiedModulesStrategy} from '../../imports';
 import {IncrementalBuildStrategy, IncrementalDriver} from '../../incremental';
+import {ComponentResolutionRegistry} from '../../incremental/api';
 import {generateAnalysis, IndexedComponent, IndexingContext} from '../../indexer';
 import {ComponentResources, CompoundMetadataReader, CompoundMetadataRegistry, DtsMetadataReader, InjectableClassRegistry, LocalMetadataRegistry, MetadataReader, ResourceRegistry} from '../../metadata';
 import {ModuleWithProvidersScanner} from '../../modulewithproviders';
+import {SemanticDepGraphAdapter} from '../../ngmodule_semantics';
 import {PartialEvaluator} from '../../partial_evaluator';
 import {NOOP_PERF_RECORDER, PerfRecorder} from '../../perf';
 import {DeclarationNode, isNamedClassDeclaration, TypeScriptReflectionHost} from '../../reflection';
@@ -634,8 +636,6 @@ export class NgCompiler {
   private resolveCompilation(traitCompiler: TraitCompiler): void {
     traitCompiler.resolve();
 
-    this.recordNgModuleScopeDependencies();
-
     // At this point, analysis is complete and the compiler can now calculate which files need to
     // be emitted, so do that.
     this.incrementalDriver.recordSuccessfulAnalysis(traitCompiler);
@@ -808,74 +808,6 @@ export class NgCompiler {
     return this.nonTemplateDiagnostics;
   }
 
-  /**
-   * Reifies the inter-dependencies of NgModules and the components within their compilation scopes
-   * into the `IncrementalDriver`'s dependency graph.
-   */
-  private recordNgModuleScopeDependencies() {
-    const recordSpan = this.perfRecorder.start('recordDependencies');
-    const depGraph = this.incrementalDriver.depGraph;
-
-    for (const scope of this.compilation!.scopeRegistry!.getCompilationScopes()) {
-      const file = scope.declaration.getSourceFile();
-      const ngModuleFile = scope.ngModule.getSourceFile();
-
-      // A change to any dependency of the declaration causes the declaration to be invalidated,
-      // which requires the NgModule to be invalidated as well.
-      depGraph.addTransitiveDependency(ngModuleFile, file);
-
-      // A change to the NgModule file should cause the declaration itself to be invalidated.
-      depGraph.addDependency(file, ngModuleFile);
-
-      const meta =
-          this.compilation!.metaReader.getDirectiveMetadata(new Reference(scope.declaration));
-      if (meta !== null && meta.isComponent) {
-        // If a component's template changes, it might have affected the import graph, and thus the
-        // remote scoping feature which is activated in the event of potential import cycles. Thus,
-        // the module depends not only on the transitive dependencies of the component, but on its
-        // resources as well.
-        depGraph.addTransitiveResources(ngModuleFile, file);
-
-        // A change to any directive/pipe in the compilation scope should cause the component to be
-        // invalidated.
-        for (const directive of scope.directives) {
-          // When a directive in scope is updated, the component needs to be recompiled as e.g. a
-          // selector may have changed.
-          depGraph.addTransitiveDependency(file, directive.ref.node.getSourceFile());
-        }
-        for (const pipe of scope.pipes) {
-          // When a pipe in scope is updated, the component needs to be recompiled as e.g. the
-          // pipe's name may have changed.
-          depGraph.addTransitiveDependency(file, pipe.ref.node.getSourceFile());
-        }
-
-        // Components depend on the entire export scope. In addition to transitive dependencies on
-        // all directives/pipes in the export scope, they also depend on every NgModule in the
-        // scope, as changes to a module may add new directives/pipes to the scope.
-        for (const depModule of scope.ngModules) {
-          // There is a correctness issue here. To be correct, this should be a transitive
-          // dependency on the depModule file, since the depModule's exports might change via one of
-          // its dependencies, even if depModule's file itself doesn't change. However, doing this
-          // would also trigger recompilation if a non-exported component or directive changed,
-          // which causes performance issues for rebuilds.
-          //
-          // Given the rebuild issue is an edge case, currently we err on the side of performance
-          // instead of correctness. A correct and performant design would distinguish between
-          // changes to the depModule which affect its export scope and changes which do not, and
-          // only add a dependency for the former. This concept is currently in development.
-          //
-          // TODO(alxhub): fix correctness issue by understanding the semantics of the dependency.
-          depGraph.addDependency(file, depModule.getSourceFile());
-        }
-      } else {
-        // Directives (not components) and pipes only depend on the NgModule which directly declares
-        // them.
-        depGraph.addDependency(file, ngModuleFile);
-      }
-    }
-    this.perfRecorder.stop(recordSpan);
-  }
-
   private scanForMwp(sf: ts.SourceFile): void {
     this.compilation!.mwpScanner.scan(sf, {
       addTypeReplacement: (node: ts.Declaration, type: Type): void => {
@@ -955,8 +887,13 @@ export class NgCompiler {
     const scopeRegistry =
         new LocalModuleScopeRegistry(localMetaReader, depScopeReader, refEmitter, aliasingHost);
     const scopeReader: ComponentScopeReader = scopeRegistry;
-    const metaRegistry = new CompoundMetadataRegistry([localMetaRegistry, scopeRegistry]);
+    const semanticDepGraphUpdater = this.incrementalDriver.getSemanticDepGraphUpdater();
+    const semanticDepRegistry = new SemanticDepGraphAdapter(semanticDepGraphUpdater);
+    const metaRegistry =
+        new CompoundMetadataRegistry([localMetaRegistry, scopeRegistry, semanticDepRegistry]);
     const injectableRegistry = new InjectableClassRegistry(reflector);
+
+    const componentResolutionRegistry: ComponentResolutionRegistry = semanticDepGraphUpdater;
 
     const metaReader = new CompoundMetadataReader([localMetaReader, dtsReader]);
     const typeCheckScopeRegistry = new TypeCheckScopeRegistry(scopeReader, metaReader);
@@ -995,7 +932,7 @@ export class NgCompiler {
           this.options.enableI18nLegacyMessageIdFormat !== false, this.usePoisonedData,
           this.options.i18nNormalizeLineEndingsInICUs, this.moduleResolver, this.cycleAnalyzer,
           refEmitter, defaultImportTracker, this.incrementalDriver.depGraph, injectableRegistry,
-          this.closureCompilerEnabled),
+          componentResolutionRegistry, this.closureCompilerEnabled),
       // TODO(alxhub): understand why the cast here is necessary (something to do with `null`
       // not being assignable to `unknown` when wrapped in `Readonly`).
       // clang-format off
