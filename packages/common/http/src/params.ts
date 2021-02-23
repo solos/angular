@@ -193,8 +193,8 @@ export class HttpParams {
 
   constructor(options: HttpParamsOptions = {} as HttpParamsOptions) {
     this.encoder = options.encoder || new HttpUrlEncodingCodec();
-    if (!!options.percentEncoding){
-        this.encoder = new HttpUrlPercentEncodingCodec();
+    if (!!options.percentEncoding) {
+      this.encoder = new HttpUrlPercentEncodingCodec();
     }
     if (!!options.fromString) {
       if (!!options.fromObject) {

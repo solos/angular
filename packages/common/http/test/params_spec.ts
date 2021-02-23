@@ -119,9 +119,7 @@ import {HttpParams} from '@angular/common/http/src/params';
       it('should stringify array params', () => {
         const body = new HttpParams({fromObject: {a: '@:$,;+=?/', b: '2'}});
         expect(body.toString()).toBe('a=@:$,;+=?/&b=2');
-
       });
     });
-
   });
 }
